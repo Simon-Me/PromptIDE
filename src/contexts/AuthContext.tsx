@@ -46,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileLoadPromise, setProfileLoadPromise] = useState<Promise<void> | null>(null)
 
 
   useEffect(() => {
@@ -81,20 +82,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   async function loadProfile(userId: string) {
-    try {
-      // Prefer RPC to get/create atomically to avoid schema-cache errors
-      const { data, error } = await supabase.rpc('get_or_create_profile')
-      if (error) throw error
-      setProfile({ id: userId, user_id: userId, settings: (data as any) || {} })
-    } catch (err: any) {
-      // If statement timeout or transient error, skip setting profile to avoid blocking app
-      const msg = String(err?.message || '').toLowerCase()
-      if (err?.code === '57014' || err?.code === 'PGRST002' || msg.includes('schema cache') || msg.includes('service unavailable')) {
-        console.warn('Profile load timed out. Continuing without blocking.')
-        return
+    if (profileLoadPromise) return profileLoadPromise
+    const p = (async () => {
+      try {
+        // Prefer RPC to get/create atomically to avoid schema-cache errors
+        const { data, error } = await supabase.rpc('get_or_create_profile')
+        if (error) throw error
+        setProfile({ id: userId, user_id: userId, settings: (data as any) || {} })
+      } catch (err: any) {
+        // If statement/lock timeout or transient error, skip setting profile to avoid blocking app
+        const msg = String(err?.message || '').toLowerCase()
+        if (err?.code === '57014' || err?.code === '55P03' || err?.code === 'PGRST002' || msg.includes('schema cache') || msg.includes('service unavailable')) {
+          console.warn('Profile load timed out. Continuing without blocking.')
+          return
+        }
+        console.error('Load profile error:', err)
+      } finally {
+        setProfileLoadPromise(null)
       }
-      console.error('Load profile error:', err)
-    }
+    })()
+    setProfileLoadPromise(p)
+    return p
   }
 
   async function signIn(email: string, password: string) {
