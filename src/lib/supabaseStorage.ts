@@ -2,6 +2,42 @@ import { supabase } from './supabase'
 
 class SupabaseStorageService {
   private lastEnsureWasFallback: boolean = false
+  // Local fallback namespace key to avoid collisions
+  private static LOCAL_NAMESPACE = 'promptide_prefs_fallback'
+
+  private readLocalFallback(): Record<string, any> {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem(SupabaseStorageService.LOCAL_NAMESPACE)
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  private writeLocalFallback(prefs: Record<string, any>): void {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        SupabaseStorageService.LOCAL_NAMESPACE,
+        JSON.stringify(prefs ?? {})
+      )
+    } catch {}
+  }
+
+  private upsertLocalKey(key: string, data: any): void {
+    const all = this.readLocalFallback()
+    all[key] = data
+    this.writeLocalFallback(all)
+  }
+
+  private deleteLocalKey(key: string): void {
+    const all = this.readLocalFallback()
+    if (key in all) {
+      delete all[key]
+      this.writeLocalFallback(all)
+    }
+  }
   private async getCurrentUserId(): Promise<string | null> {
     const { data } = await supabase.auth.getUser()
     return data.user?.id ?? null
@@ -47,22 +83,36 @@ class SupabaseStorageService {
   async loadData(key: string): Promise<any> {
     const userId = await this.getCurrentUserId()
     if (!userId) {
-      // Safe defaults when not signed in
+      // When not signed in, serve persisted local fallback
+      const local = this.readLocalFallback()
+      const value = local[key]
+      if (value !== undefined) return value
       return key === 'prompts' ? [] : key === 'folders' ? [] : {}
     }
     const prefs = await this.ensureProfile(userId)
+    if (this.lastEnsureWasFallback) {
+      // On timeouts, use local fallback if present
+      const local = this.readLocalFallback()
+      const value = local[key]
+      if (value !== undefined) return value
+    }
     if (key === 'folders' && !Array.isArray(prefs?.[key])) return []
     return prefs?.[key] ?? (key === 'prompts' ? [] : {})
   }
 
   async saveData(key: string, data: any): Promise<void> {
     const userId = await this.getCurrentUserId()
-    if (!userId) return // no-op when unauthenticated
+    if (!userId) {
+      // Persist locally when unauthenticated (e.g., GitHub Pages demo)
+      this.upsertLocalKey(key, data)
+      return
+    }
 
     const prefs = await this.ensureProfile(userId)
     // If the last ensure was a fallback (timeout), avoid overwriting server state with partial data
     if (this.lastEnsureWasFallback) {
-      // Defer write; next successful read will clear the flag
+      // Persist locally so user changes are not lost; server write will be attempted later
+      this.upsertLocalKey(key, data)
       return
     }
     const newPrefs = { ...prefs, [key]: data }
@@ -72,7 +122,13 @@ class SupabaseStorageService {
       .update({ preferences: newPrefs, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
 
-    if (error) throw error
+    if (error) {
+      // On write error, keep a local copy so the UI persists across reloads
+      this.upsertLocalKey(key, data)
+      throw error
+    }
+    // Successful write: also mirror locally to ensure fast subsequent reads
+    this.upsertLocalKey(key, data)
   }
 
   async loadMany(keys: string[]): Promise<Record<string, any>> {
@@ -92,9 +148,15 @@ class SupabaseStorageService {
 
   async deleteData(key: string): Promise<void> {
     const userId = await this.getCurrentUserId()
-    if (!userId) return
+    if (!userId) {
+      this.deleteLocalKey(key)
+      return
+    }
     const prefs = await this.ensureProfile(userId)
-    if (this.lastEnsureWasFallback) return
+    if (this.lastEnsureWasFallback) {
+      this.deleteLocalKey(key)
+      return
+    }
     const { [key]: _removed, ...rest } = prefs || {}
 
     const { error } = await supabase
@@ -102,7 +164,12 @@ class SupabaseStorageService {
       .update({ preferences: rest, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
 
-    if (error) throw error
+    if (error) {
+      // Mirror deletion locally even if server fails
+      this.deleteLocalKey(key)
+      throw error
+    }
+    this.deleteLocalKey(key)
   }
 }
 
