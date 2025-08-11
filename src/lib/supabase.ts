@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://iffukxtuviogjknftvfk.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmZnVreHR1dmlvZ2prbmZ0dmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxNzA5MDQsImV4cCI6MjA2ODc0NjkwNH0.UWaw_WaOVXNkBcYZqfwjjd3bo0YmaX-8a3i9wdKQRyI'
+const url = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://iffukxtuviogjknftvfk.supabase.co'
+const anon = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlmZnVreHR1dmlvZ2prbmZ0dmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxNzA5MDQsImV4cCI6MjA2ODc0NjkwNH0.UWaw_WaOVXNkBcYZqfwjjd3bo0YmaX-8a3i9wdKQRyI'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(url, anon)
 
 // Types for our database
 export interface Profile {
