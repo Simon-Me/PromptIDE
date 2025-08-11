@@ -82,19 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function loadProfile(userId: string) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id,user_id,preferences')
-        .eq('user_id', userId)
-        .maybeSingle()
+      // Prefer RPC to get/create atomically to avoid schema-cache errors
+      const { data, error } = await supabase.rpc('get_or_create_profile')
       if (error) throw error
-      if (!data) {
-        const { error: insertError } = await supabase.from('profiles').insert({ id: userId, user_id: userId, preferences: {} })
-        if (insertError) throw insertError
-        setProfile({ id: userId, user_id: userId, settings: {} })
-      } else {
-        setProfile({ id: data.id, user_id: data.user_id, settings: (data.preferences as any) || {} })
-      }
+      setProfile({ id: userId, user_id: userId, settings: (data as any) || {} })
     } catch (err: any) {
       // If statement timeout or transient error, skip setting profile to avoid blocking app
       const msg = String(err?.message || '').toLowerCase()
