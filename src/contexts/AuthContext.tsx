@@ -122,7 +122,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const userId = data.user?.id
     if (userId) {
-      const { error: insertError } = await supabase.from('profiles').insert({ id: userId, user_id: userId, full_name: fullName || null, preferences: {} })
+      // Initialize preferences row via RPC to avoid schema cache errors
+      const { error: insertError } = await supabase.rpc('set_preferences', { prefs: {} })
       if (insertError) console.error('Create profile error:', insertError)
     }
     toast.success('Registrierung erfolgreich!')
@@ -139,14 +140,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function updateProfile(updates: Partial<Profile>) {
     if (!user) return
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: updates.display_name,
-        avatar_url: updates.avatar_url,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', user.id)
+    // If you need to store profile fields beyond preferences, you can keep a dedicated table.
+    // For now we only maintain preferences; user profile display fields can be extended later via another RPC.
+    const { data, error: loadErr } = await supabase.rpc('get_or_create_profile')
+    if (loadErr) {
+      toast.error(loadErr.message || 'Profil-Update fehlgeschlagen')
+      throw loadErr
+    }
+    const prefs = (data as any) || {}
+    const merged = { ...prefs, settings: { ...(prefs.settings || {}), ...updates.settings } }
+    const { error } = await supabase.rpc('set_preferences', { prefs: merged })
     if (error) {
       toast.error(error.message || 'Profil-Update fehlgeschlagen')
       throw error
