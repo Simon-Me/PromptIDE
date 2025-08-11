@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
+import { initFirebaseIfConfigured, getFirebase } from '../lib/firebase'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged } from 'firebase/auth'
 
 export interface User {
   id: string
@@ -19,7 +20,7 @@ export interface Profile {
   avatar_url?: string
   created_at?: string
   updated_at?: string
-  settings?: any
+  settings: Record<string, any>
 }
 
 interface AuthContextType {
@@ -34,11 +35,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+function readLocal<T>(key: string, fallback: T): T {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback }
+}
+function writeLocal<T>(key: string, value: T) { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
+
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider')
   return context
 }
 
@@ -46,127 +50,103 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [profileLoadPromise, setProfileLoadPromise] = useState<Promise<void> | null>(null)
-
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        const { data } = await supabase.auth.getUser()
-        const supaUser = data.user
-        if (supaUser) {
-          setUser({ id: supaUser.id, email: supaUser.email || '' })
-          // Fire-and-forget profile load so we don't block app boot
-          loadProfile(supaUser.id)
+    const fb = initFirebaseIfConfigured()
+    if (fb) {
+      const unsub = onAuthStateChanged(fb.auth, (u) => {
+        if (u) {
+          const mapped: User = { id: u.uid, email: u.email || '' }
+          setUser(mapped)
+          const p = readLocal<Profile | null>(`profile_${mapped.id}`, null) || {
+            id: mapped.id,
+            user_id: mapped.id,
+            settings: { theme: 'dark', editor_font_size: 14, auto_save: true, show_line_numbers: true, word_wrap: true },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }
+          setProfile(p)
+        } else {
+          setUser(null)
+          setProfile(null)
         }
-      } finally {
         setLoading(false)
+      })
+      return () => unsub()
+    } else {
+      // pure local fallback
+      const existing = readLocal<User | null>('auth_user', null)
+      if (existing) {
+        setUser(existing)
+        const p = readLocal<Profile | null>(`profile_${existing.id}`, null) || {
+          id: existing.id,
+          user_id: existing.id,
+          settings: { theme: 'dark', editor_font_size: 14, auto_save: true, show_line_numbers: true, word_wrap: true },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        setProfile(p)
       }
-    }
-
-    // Listen to auth changes
-    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser({ id: session.user.id, email: session.user.email || '' })
-        loadProfile(session.user.id)
-      } else {
-        setUser(null)
-        setProfile(null)
-      }
-    })
-
-    init()
-    return () => {
-      authSub.subscription.unsubscribe()
+      setLoading(false)
     }
   }, [])
 
-  async function loadProfile(userId: string) {
-    if (profileLoadPromise) return profileLoadPromise
-    const p = (async () => {
-      try {
-        // Prefer RPC to get/create atomically to avoid schema-cache errors
-        const { data, error } = await supabase.rpc('get_or_create_profile')
-        if (error) throw error
-        setProfile({ id: userId, user_id: userId, settings: (data as any) || {} })
-      } catch (err: any) {
-        // If statement/lock timeout or transient error, skip setting profile to avoid blocking app
-        const msg = String(err?.message || '').toLowerCase()
-        if (err?.code === '57014' || err?.code === '55P03' || err?.code === 'PGRST002' || msg.includes('schema cache') || msg.includes('service unavailable')) {
-          console.warn('Profile load timed out. Continuing without blocking.')
-          return
-        }
-        console.error('Load profile error:', err)
-      } finally {
-        setProfileLoadPromise(null)
-      }
-    })()
-    setProfileLoadPromise(p)
-    return p
-  }
-
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      toast.error(error.message || 'Anmeldung fehlgeschlagen')
-      throw error
+    const fb = getFirebase()
+    if (fb) {
+      await signInWithEmailAndPassword(fb.auth, email, password)
+      toast.success('Erfolgreich angemeldet!')
+      return
     }
+    // local fallback
+    const u: User = readLocal<User | null>('auth_user', null) || { id: `loc_${Date.now()}`, email }
+    writeLocal('auth_user', u)
+    setUser(u)
+    const p = readLocal<Profile | null>(`profile_${u.id}`, null) || {
+      id: u.id,
+      user_id: u.id,
+      settings: { theme: 'dark', editor_font_size: 14, auto_save: true, show_line_numbers: true, word_wrap: true },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    writeLocal(`profile_${u.id}`, p)
+    setProfile(p)
     toast.success('Erfolgreich angemeldet!')
   }
 
-  async function signUp(email: string, password: string, fullName?: string) {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) {
-      toast.error(error.message || 'Registrierung fehlgeschlagen')
-      throw error
+  async function signUp(email: string, password: string, _fullName?: string) {
+    const fb = getFirebase()
+    if (fb) {
+      await createUserWithEmailAndPassword(fb.auth, email, password)
+      toast.success('Registrierung erfolgreich!')
+      return
     }
-    const userId = data.user?.id
-    if (userId) {
-      // Initialize preferences row via RPC to avoid schema cache errors
-      const { error: insertError } = await supabase.rpc('set_preferences', { prefs: {} })
-      if (insertError) console.error('Create profile error:', insertError)
-    }
+    await signIn(email, password)
     toast.success('Registrierung erfolgreich!')
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut()
-    if (error) {
-      toast.error(error.message || 'Abmeldung fehlgeschlagen')
-      throw error
+    const fb = getFirebase()
+    if (fb) {
+      await fbSignOut(fb.auth)
+      toast.success('Erfolgreich abgemeldet!')
+      return
     }
+    localStorage.removeItem('auth_user')
+    setUser(null)
+    setProfile(null)
     toast.success('Erfolgreich abgemeldet!')
   }
 
   async function updateProfile(updates: Partial<Profile>) {
-    if (!user) return
-    // If you need to store profile fields beyond preferences, you can keep a dedicated table.
-    // For now we only maintain preferences; user profile display fields can be extended later via another RPC.
-    const { data, error: loadErr } = await supabase.rpc('get_or_create_profile')
-    if (loadErr) {
-      toast.error(loadErr.message || 'Profil-Update fehlgeschlagen')
-      throw loadErr
-    }
-    const prefs = (data as any) || {}
-    const merged = { ...prefs, settings: { ...(prefs.settings || {}), ...updates.settings } }
-    const { error } = await supabase.rpc('set_preferences', { prefs: merged })
-    if (error) {
-      toast.error(error.message || 'Profil-Update fehlgeschlagen')
-      throw error
-    }
-    await loadProfile(user.id)
+    if (!user || !profile) return
+    const merged: Profile = { ...profile, ...updates, settings: { ...(profile.settings||{}), ...(updates.settings||{}) }, updated_at: new Date().toISOString() }
+    setProfile(merged)
+    writeLocal(`profile_${user.id}`, merged)
     toast.success('Profil erfolgreich aktualisiert!')
   }
 
-  const value = {
-    user,
-    profile,
-    loading,
-    signIn,
-    signUp,
-    signOut,
-    updateProfile
-  }
+  const value = { user, profile, loading, signIn, signUp, signOut, updateProfile }
 
   return (
     <AuthContext.Provider value={value}>

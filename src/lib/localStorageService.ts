@@ -22,8 +22,8 @@ class LocalStorageService {
 
     try {
       const raw = localStorage.getItem(namespaced)
-      const defVal = key === 'prompts' || key === 'folders' ? [] : {}
       if (!raw) {
+        const defVal = key === 'prompts' || key === 'folders' ? [] : {}
         this.cache[namespaced] = defVal
         return defVal
       }
@@ -60,5 +60,5 @@ class LocalStorageService {
   }
 }
 
-const remoteStorage = new LocalStorageService()
-export default remoteStorage
+const localStorageService = new LocalStorageService()
+export default localStorageService

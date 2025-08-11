@@ -353,6 +353,7 @@ export function Sidebar({ activeSection, onSectionChange, isCollapsed, onToggleC
         : p
     )
     setPrompts(updatedPrompts)
+    try { await storage.saveData('prompts', updatedPrompts) } catch {}
     try { await updateDbPrompt(promptId, { title: newTitle.trim() }) } catch {}
     window.dispatchEvent(new CustomEvent('prompts-updated', { detail: { prompts: updatedPrompts } }))
     setEditingPrompt(null)
