@@ -94,39 +94,20 @@ class SupabaseStorageService {
 
   async loadData(key: string): Promise<any> {
     const userId = await this.getCurrentUserId()
-    if (!userId) {
-      // When not signed in, serve persisted local fallback
-      const local = this.readLocalFallback()
-      const value = local[key]
-      if (value !== undefined) return value
-      return key === 'prompts' ? [] : key === 'folders' ? [] : {}
-    }
+    if (!userId) return key === 'prompts' ? [] : key === 'folders' ? [] : {}
     const prefs = await this.ensureProfile(userId)
-    if (this.lastEnsureWasFallback) {
-      // On timeouts, use local fallback if present
-      const local = this.readLocalFallback()
-      const value = local[key]
-      if (value !== undefined) return value
-    }
+    if (this.lastEnsureWasFallback) return key === 'prompts' ? [] : key === 'folders' ? [] : {}
     if (key === 'folders' && !Array.isArray(prefs?.[key])) return []
     return prefs?.[key] ?? (key === 'prompts' ? [] : {})
   }
 
   async saveData(key: string, data: any): Promise<void> {
     const userId = await this.getCurrentUserId()
-    if (!userId) {
-      // Persist locally when unauthenticated (e.g., GitHub Pages demo)
-      this.upsertLocalKey(key, data)
-      return
-    }
+    if (!userId) return
 
     const prefs = await this.ensureProfile(userId)
     // If the last ensure was a fallback (timeout), avoid overwriting server state with partial data
-    if (this.lastEnsureWasFallback) {
-      // Persist locally so user changes are not lost; server write will be attempted later
-      this.upsertLocalKey(key, data)
-      return
-    }
+    if (this.lastEnsureWasFallback) return
     const newPrefs = { ...prefs, [key]: data }
 
     const { error } = await supabase
@@ -134,13 +115,7 @@ class SupabaseStorageService {
       .update({ preferences: newPrefs, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
 
-    if (error) {
-      // On write error, keep a local copy so the UI persists across reloads
-      this.upsertLocalKey(key, data)
-      throw error
-    }
-    // Successful write: also mirror locally to ensure fast subsequent reads
-    this.upsertLocalKey(key, data)
+    if (error) throw error
   }
 
   async loadMany(keys: string[]): Promise<Record<string, any>> {
@@ -160,15 +135,9 @@ class SupabaseStorageService {
 
   async deleteData(key: string): Promise<void> {
     const userId = await this.getCurrentUserId()
-    if (!userId) {
-      this.deleteLocalKey(key)
-      return
-    }
+    if (!userId) return
     const prefs = await this.ensureProfile(userId)
-    if (this.lastEnsureWasFallback) {
-      this.deleteLocalKey(key)
-      return
-    }
+    if (this.lastEnsureWasFallback) return
     const { [key]: _removed, ...rest } = prefs || {}
 
     const { error } = await supabase
@@ -176,12 +145,7 @@ class SupabaseStorageService {
       .update({ preferences: rest, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
 
-    if (error) {
-      // Mirror deletion locally even if server fails
-      this.deleteLocalKey(key)
-      throw error
-    }
-    this.deleteLocalKey(key)
+    if (error) throw error
   }
 }
 

@@ -47,18 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Avoid Supabase calls entirely in static deployments (e.g., GitHub Pages)
-  const OFFLINE = typeof window !== 'undefined' && (
-    window.location.hostname.endsWith('github.io') ||
-    (import.meta as any)?.env?.VITE_SUPABASE_DISABLED === 'true'
-  )
 
   useEffect(() => {
-    if (OFFLINE) {
-      // Skip Supabase auth/profile completely in offline mode
-      setLoading(false)
-      return
-    }
     const init = async () => {
       try {
         const { data } = await supabase.auth.getUser()
