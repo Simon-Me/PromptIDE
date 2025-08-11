@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+dist-electron/
+dist-mac/
+
+# Electron binaries
+**/Electron.app/
+
+# Vite cache
+.vite/
+
+# OS/Editor
+.DS_Store
+*.log
+
+# Supabase temp
+supabase/.temp/
+
+# Misc
+*.zip
+*.dmg
+*.exe
+*.AppImage
