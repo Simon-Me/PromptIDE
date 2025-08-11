@@ -30,8 +30,13 @@ export interface ListPromptsOptions {
 }
 
 async function getCurrentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser()
-  return data.user?.id ?? null
+  try {
+    const { data, error } = await supabase.auth.getUser()
+    if (error) return null
+    return data.user?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 function isMissingColumnError(error: any, columnName: string): boolean {

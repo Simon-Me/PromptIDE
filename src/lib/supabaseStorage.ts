@@ -39,8 +39,13 @@ class SupabaseStorageService {
     }
   }
   private async getCurrentUserId(): Promise<string | null> {
-    const { data } = await supabase.auth.getUser()
-    return data.user?.id ?? null
+    try {
+      const { data, error } = await supabase.auth.getUser()
+      if (error) return null
+      return data.user?.id ?? null
+    } catch {
+      return null
+    }
   }
 
   private async ensureProfile(userId: string): Promise<Record<string, any>> {
@@ -53,7 +58,14 @@ class SupabaseStorageService {
 
       if (error && error.code !== 'PGRST116') {
         // Statement timeout or transient server error: fall back to empty prefs
-        if (error.code === '57014' || String(error.message || '').toLowerCase().includes('timeout')) {
+        const msg = String(error.message || '').toLowerCase()
+        if (
+          error.code === '57014' ||
+          error.code === 'PGRST002' ||
+          msg.includes('timeout') ||
+          msg.includes('service unavailable') ||
+          msg.includes('schema cache')
+        ) {
           this.lastEnsureWasFallback = true
           return {}
         }

@@ -107,7 +107,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       // If statement timeout or transient error, skip setting profile to avoid blocking app
-      if (err?.code === '57014') {
+      const msg = String(err?.message || '').toLowerCase()
+      if (err?.code === '57014' || err?.code === 'PGRST002' || msg.includes('schema cache') || msg.includes('service unavailable')) {
         console.warn('Profile load timed out. Continuing without blocking.')
         return
       }
