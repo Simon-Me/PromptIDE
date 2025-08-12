@@ -650,6 +650,7 @@ export function Sidebar({ activeSection, onSectionChange, isCollapsed, onToggleC
       onDragStart={(e) => handleDragStart(e, 'prompt', prompt)}
       onDragEnd={handleDragEnd}
       onClick={() => editingPrompt !== prompt.id ? openPrompt(prompt) : undefined}
+      onDoubleClick={() => setEditingPrompt(prompt.id)}
       onMouseMove={(e) => setMousePosition({ x: e.clientX, y: e.clientY })}
       className="group relative flex items-center justify-between p-2 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
     >
@@ -749,76 +750,11 @@ export function Sidebar({ activeSection, onSectionChange, isCollapsed, onToggleC
         ) : (
           <>
             <button
-              onClick={(e) => toggleBookmark(prompt, e)}
-              className={cn(
-                "p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors",
-                prompt.is_bookmarked ? "text-yellow-500" : "text-slate-400"
-              )}
-            >
-              <Bookmark className="w-3 h-3" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setEditingPrompt(prompt.id)
-              }}
-              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-            >
-              <Edit3 className="w-3 h-3" />
-            </button>
-            <button
               onClick={(e) => copyPrompt(prompt, e)}
               className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
             >
               <Copy className="w-3 h-3" />
             </button>
-            <div className="relative inline-block">
-              <button
-                onClick={(e) => { e.stopPropagation(); setMovePickerFor(movePickerFor === prompt.id ? null : prompt.id) }}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-                title="In Ordner verschieben"
-              >
-                <Folder className="w-3 h-3" />
-              </button>
-              {movePickerFor === prompt.id && (
-                <div className="absolute right-0 mt-1 z-50 p-2 rounded-lg border border-slate-200/60 dark:border-slate-700/60 bg-white dark:bg-slate-800 shadow-lg min-w-[200px]">
-                  <div className="text-xs text-slate-500 mb-1">Verschieben nach</div>
-                  <div className="space-y-1 max-h-56 overflow-y-auto">
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation()
-                        const updatedPrompts = prompts.map(p => p.id === prompt.id ? { ...p, folder: 'all-prompts' } : p)
-                        setPrompts(updatedPrompts)
-                        try { await upsertMeta(prompt.id, { folder: 'all-prompts' }) } catch {}
-                        window.dispatchEvent(new CustomEvent('prompts-updated', { detail: { prompts: updatedPrompts } }))
-                        setMovePickerFor(null)
-                        toast.success('In „Alle Prompts“ verschoben!')
-                      }}
-                      className="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-sm"
-                    >
-                      Alle Prompts
-                    </button>
-                    {flattenFolders().map(({ id, name, depth }) => (
-                      <button
-                        key={id}
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          const updatedPrompts = prompts.map(p => p.id === prompt.id ? { ...p, folder: id } : p)
-                          setPrompts(updatedPrompts)
-                          try { await upsertMeta(prompt.id, { folder: id }) } catch {}
-                          window.dispatchEvent(new CustomEvent('prompts-updated', { detail: { prompts: updatedPrompts } }))
-                          setMovePickerFor(null)
-                          toast.success(`Nach „${name}“ verschoben!`)
-                        }}
-                        className="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-sm"
-                      >
-                        <span className="inline-block" style={{ paddingLeft: depth * 12 }}>{name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
             <button
               onClick={(e) => deletePrompt(prompt, e)}
               className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
@@ -1094,7 +1030,7 @@ export function Sidebar({ activeSection, onSectionChange, isCollapsed, onToggleC
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Deine Prompts</h2>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => onNewPrompt(selectedFolder)}
+                onClick={() => onNewPrompt('all-prompts')}
                 className="p-1 rounded hover:bg-slate-200/40 dark:hover:bg-slate-700/40 transition-colors"
                 title="Neuer Prompt"
               >

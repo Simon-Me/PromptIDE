@@ -5,8 +5,10 @@ import path from 'path'
 const __dirname = path.dirname(new URL(import.meta.url).pathname)
 
 // https://vitejs.dev/config/
+const isGhPages = process.env.GITHUB_PAGES === '1'
+
 export default defineConfig({
-  base: './',
+  base: isGhPages ? '/PromptIDE/' : './',
   plugins: [
     react()
   ],
@@ -32,7 +34,7 @@ export default defineConfig({
     cors: true
   },
   define: {
-    __IS_ELECTRON__: 'true'
+    __IS_ELECTRON__: JSON.stringify(!isGhPages)
   }
 })
 

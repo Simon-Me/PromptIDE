@@ -74,19 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       return () => unsub()
     } else {
-      // pure local fallback
-      const existing = readLocal<User | null>('auth_user', null)
-      if (existing) {
-        setUser(existing)
-        const p = readLocal<Profile | null>(`profile_${existing.id}`, null) || {
-          id: existing.id,
-          user_id: existing.id,
-          settings: { theme: 'dark', editor_font_size: 14, auto_save: true, show_line_numbers: true, word_wrap: true },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-        setProfile(p)
-      }
+      // Cloud-only requires Firebase; without it, just show logged-out state
+      setUser(null)
+      setProfile(null)
       setLoading(false)
     }
   }, [])
@@ -94,35 +84,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signIn(email: string, password: string) {
     const fb = getFirebase()
     if (fb) {
-      await signInWithEmailAndPassword(fb.auth, email, password)
-      toast.success('Erfolgreich angemeldet!')
-      return
+      try {
+        await signInWithEmailAndPassword(fb.auth, email, password)
+        toast.success('Erfolgreich angemeldet!')
+        return
+      } catch (err: any) {
+        const code = err?.code || 'auth/unknown'
+        const msg =
+          code === 'auth/invalid-credential' || code === 'auth/wrong-password'
+            ? 'E-Mail oder Passwort ist falsch.'
+            : code === 'auth/user-not-found'
+            ? 'Kein Benutzer mit dieser E-Mail gefunden.'
+            : code === 'auth/too-many-requests'
+            ? 'Zu viele Versuche. Bitte später erneut versuchen.'
+            : 'Anmeldung fehlgeschlagen.'
+        toast.error(msg)
+        throw err
+      }
     }
-    // local fallback
-    const u: User = readLocal<User | null>('auth_user', null) || { id: `loc_${Date.now()}`, email }
-    writeLocal('auth_user', u)
-    setUser(u)
-    const p = readLocal<Profile | null>(`profile_${u.id}`, null) || {
-      id: u.id,
-      user_id: u.id,
-      settings: { theme: 'dark', editor_font_size: 14, auto_save: true, show_line_numbers: true, word_wrap: true },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-    writeLocal(`profile_${u.id}`, p)
-    setProfile(p)
-    toast.success('Erfolgreich angemeldet!')
+    // Cloud-only: no local fallback
+    toast.error('Cloud-only: Bitte Firebase in .env.local konfigurieren und erneut versuchen.')
+    return
   }
 
   async function signUp(email: string, password: string, _fullName?: string) {
     const fb = getFirebase()
     if (fb) {
-      await createUserWithEmailAndPassword(fb.auth, email, password)
-      toast.success('Registrierung erfolgreich!')
-      return
+      try {
+        await createUserWithEmailAndPassword(fb.auth, email, password)
+        toast.success('Registrierung erfolgreich!')
+        return
+      } catch (err: any) {
+        const code = err?.code || 'auth/unknown'
+        const msg =
+          code === 'auth/email-already-in-use'
+            ? 'Diese E-Mail wird bereits verwendet.'
+            : code === 'auth/invalid-email'
+            ? 'Ungültige E-Mail-Adresse.'
+            : code === 'auth/weak-password'
+            ? 'Das Passwort ist zu schwach.'
+            : 'Registrierung fehlgeschlagen.'
+        toast.error(msg)
+        throw err
+      }
     }
-    await signIn(email, password)
-    toast.success('Registrierung erfolgreich!')
+    // Cloud-only: no local fallback
+    toast.error('Cloud-only: Bitte Firebase in .env.local konfigurieren und erneut versuchen.')
+    return
   }
 
   async function signOut() {
@@ -132,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       toast.success('Erfolgreich abgemeldet!')
       return
     }
-    localStorage.removeItem('auth_user')
+    // Cloud-only: ensure logged-out state
     setUser(null)
     setProfile(null)
     toast.success('Erfolgreich abgemeldet!')

@@ -60,9 +60,17 @@ export async function listMyPrompts(): Promise<PromptListItem[]> {
 
 export async function createPrompt(init?: Partial<PromptListItem>): Promise<PromptListItem> {
   const prompts: PromptListItem[] = (await storage.loadData('prompts')) || []
+  const baseTitle = init?.title || 'Neuer Prompt'
+  const existingTitles = new Set((prompts || []).map(p => (p.title || '').trim()))
+  const generateUniqueTitle = (base: string): string => {
+    if (!existingTitles.has(base)) return base
+    let i = 2
+    while (existingTitles.has(`${base} ${i}`)) i++
+    return `${base} ${i}`
+  }
   const p: PromptListItem = {
     id: newId(),
-    title: init?.title || `Neuer Prompt ${new Date().toLocaleDateString()}`,
+    title: generateUniqueTitle(baseTitle),
     content: init?.content || '',
     description: init?.description || '',
     type: (init?.type || 'text') as PromptType,

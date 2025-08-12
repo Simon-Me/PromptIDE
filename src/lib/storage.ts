@@ -2,6 +2,8 @@ import localforage from 'localforage'
 import { initFirebaseIfConfigured, getFirebase } from './firebase'
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 
+const storageMode: 'cloud' | 'hybrid' = ((import.meta as any).env?.VITE_STORAGE_MODE === 'cloud') ? 'cloud' : 'hybrid'
+
 localforage.config({
   name: 'prompt-ide',
   storeName: 'kv',
@@ -23,12 +25,29 @@ async function migrateIfNeeded<T>(key: string, defaultValue: T): Promise<T> {
 }
 
 function getCurrentUserId(): string | null {
+  // Prefer Firebase auth user when available
+  try {
+    const fb = getFirebase()
+    const firebaseUid = (fb as any)?.auth?.currentUser?.uid as string | undefined
+    if (firebaseUid) return firebaseUid
+  } catch {}
+
+  // If Firebase is configured but there is no signed-in user, do not use local fallback id
+  // to avoid unauthorized Firestore writes with a stale local user id
+  try {
+    const fb = getFirebase()
+    if (fb) return null
+  } catch {}
+
+  // Local fallback user id
   try {
     const raw = localStorage.getItem('auth_user')
     if (!raw) return null
     const u = JSON.parse(raw)
     return u?.id || null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 async function readFromFirestore<T>(key: string): Promise<T | undefined> {
@@ -64,7 +83,16 @@ async function deleteFromFirestore(key: string): Promise<boolean> {
 
 export const storage = {
   async loadData<T = any>(key: string): Promise<T> {
-    // Prefer Firestore if configured and user present
+    // Cloud-only mode: do not read from local at all
+    if (storageMode === 'cloud') {
+      const fromCloud = await readFromFirestore<T>(key).catch(() => undefined)
+      if (fromCloud !== undefined) return fromCloud as T
+      // return sensible defaults if nothing in cloud yet
+      const defVal: any = key === 'prompts' || key === 'folders' ? [] : {}
+      return defVal as T
+    }
+
+    // Hybrid mode: Prefer Firestore if configured and user present
     const fromCloud = await readFromFirestore<T>(key).catch(() => undefined)
     if (fromCloud !== undefined) return fromCloud as T
 
@@ -74,16 +102,24 @@ export const storage = {
     return (data as any) ?? defVal
   },
   async saveData<T = any>(key: string, value: T): Promise<void> {
+    const hasFirebaseUser = !!getCurrentUserId()
     const written = await writeToFirestore<T>(key, value).catch(() => false)
-    if (!written) {
-      await localforage.setItem(key, value as any)
-    } else {
-      // Mirror to IndexedDB for offline
-      await localforage.setItem(key, value as any)
+    if (storageMode === 'cloud') {
+      if (!hasFirebaseUser || !written) {
+        throw new Error('Cloud-only mode: write failed (not signed in or Firestore unavailable).')
+      }
+      return
     }
+    // Hybrid: fall back to local if cloud write fails
+    if (!written) await localforage.setItem(key, value as any)
+    else await localforage.setItem(key, value as any)
   },
   async deleteData(key: string): Promise<void> {
     const deleted = await deleteFromFirestore(key).catch(() => false)
+    if (storageMode === 'cloud') {
+      if (!deleted) throw new Error('Cloud-only mode: delete failed (not signed in or Firestore unavailable).')
+      return
+    }
     await localforage.removeItem(key)
   }
 }

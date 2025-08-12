@@ -17,6 +17,13 @@ const cfg = {
 
 export function initFirebaseIfConfigured() {
   if (app) return { app, auth: auth!, db: db! }
+  const forceLocal = (import.meta as any).env?.VITE_FORCE_LOCAL === '1'
+  if (forceLocal) {
+    if (typeof console !== 'undefined') {
+      console.warn('[PromptIDE] Firebase disabled via VITE_FORCE_LOCAL=1')
+    }
+    return null
+  }
   const hasAll = cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId
   if (!hasAll) return null
   app = initializeApp(cfg as any)
