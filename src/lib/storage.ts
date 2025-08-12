@@ -83,6 +83,11 @@ async function deleteFromFirestore(key: string): Promise<boolean> {
 
 export const storage = {
   async loadData<T = any>(key: string): Promise<T> {
+    // Never store or read API keys from cloud. Settings are local-only.
+    if (key === 'settings') {
+      const local = await migrateIfNeeded<T>(key, {} as any)
+      return (local as any) ?? ({} as any)
+    }
     // Cloud-only mode: do not read from local at all
     if (storageMode === 'cloud') {
       const fromCloud = await readFromFirestore<T>(key).catch(() => undefined)
@@ -102,6 +107,11 @@ export const storage = {
     return (data as any) ?? defVal
   },
   async saveData<T = any>(key: string, value: T): Promise<void> {
+    // Settings (contains secrets like API keys) are intentionally stored locally only
+    if (key === 'settings') {
+      await localforage.setItem(key, value as any)
+      return
+    }
     const hasFirebaseUser = !!getCurrentUserId()
     const written = await writeToFirestore<T>(key, value).catch(() => false)
     if (storageMode === 'cloud') {

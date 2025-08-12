@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { storage } from '../../lib/storage'
+import { chatGPTService } from '../../lib/chatgpt'
 import { 
   Settings, 
   User, 
@@ -155,6 +156,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       }
       
       await storage.saveData('settings', settings)
+      // Ensure the in-memory ChatGPT service picks up the latest key immediately
+      try { chatGPTService.updateSettings() } catch {}
       
       console.log('Settings saved:', settings)
       toast.success('Einstellungen gespeichert!')
