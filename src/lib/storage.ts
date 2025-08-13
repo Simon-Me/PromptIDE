@@ -93,6 +93,11 @@ export const storage = {
       const fromCloud = await readFromFirestore<T>(key).catch(() => undefined)
       if (fromCloud !== undefined) return fromCloud as T
       // return sensible defaults if nothing in cloud yet
+      // Fallback to local mirror to avoid data loss if cloud not yet available
+      try {
+        const mirrored = await migrateIfNeeded<T>(key, (key === 'prompts' || key === 'folders' ? ([] as any) : ({} as any)))
+        if (mirrored !== undefined && mirrored !== null) return mirrored as T
+      } catch {}
       const defVal: any = key === 'prompts' || key === 'folders' ? [] : {}
       return defVal as T
     }
@@ -115,9 +120,8 @@ export const storage = {
     const hasFirebaseUser = !!getCurrentUserId()
     const written = await writeToFirestore<T>(key, value).catch(() => false)
     if (storageMode === 'cloud') {
-      if (!hasFirebaseUser || !written) {
-        throw new Error('Cloud-only mode: write failed (not signed in or Firestore unavailable).')
-      }
+      // Always mirror locally to prevent accidental data loss; if cloud write fails, keep local copy
+      await localforage.setItem(key, value as any)
       return
     }
     // Hybrid: fall back to local if cloud write fails

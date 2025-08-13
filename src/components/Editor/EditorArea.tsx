@@ -801,6 +801,8 @@ export const EditorArea = forwardRef<EditorAreaRef, EditorAreaProps>(({ section 
     window.dispatchEvent(new CustomEvent('prompts-updated', { detail: { prompts: updated } }))
     window.dispatchEvent(new CustomEvent('prompt-created', { detail: { promptId: newPrompt.id } }))
     toast.success('Neuer Prompt erstellt!')
+    // Persist immediately to minimize loss on reload
+    try { await updateDbPrompt(newPrompt.id, {}) } catch {}
   }
 
   const openPrompt = (prompt: Prompt) => {
